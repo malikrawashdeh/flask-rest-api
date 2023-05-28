@@ -2,27 +2,17 @@ from flask.views import MethodView
 from flask_smorest import Blueprint, abort
 from passlib.hash import pbkdf2_sha256
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt, create_refresh_token, get_jwt_identity
-import requests
-import os
 from sqlalchemy import or_ 
-
+from flask import current_app
 from db import db 
 from models import UserModel
 from schemas import UserSchema, UserRegisterSchema
 from blocklikst import BLOCKLIST
 
+from tasks import send_user_registration_email
+
 blp = Blueprint("Users", "users", description="Operations on users")
 
-def send_simple_message(to, subject, body):
-    domain = os.getenv("MAILGUN_DOMAIN")
-    api_key = os.getenv("MAILGUN_API_KEY")
-    return requests.post(
-		f"https://api.mailgun.net/v3/{domain}/messages",
-		auth=("api", api_key),
-		data={"from": f"Store Owner <mailgun@{domain}>",
-			"to": [to],
-			"subject": subject,
-			"text": body})
 
 
 @blp.route("/register")
@@ -42,7 +32,8 @@ class UserRegister(MethodView):
         db.session.add(user)
         db.session.commit()
 
-        send_simple_message(user.email, "Welcome to Stores: Successfully Signed Up", f"Thank you for registering {user_data['username']}")
+        current_app.queue.enqueue(send_user_registration_email, user.email, user.username)
+
 
         return {"message": "User created successfully."}, 201
 
